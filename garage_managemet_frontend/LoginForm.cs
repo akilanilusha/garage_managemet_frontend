@@ -1,11 +1,9 @@
 ﻿using Guna.UI2.WinForms;
 using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.Drawing;
-using System.Linq;
+using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -17,6 +15,7 @@ namespace garage_managemet_frontend
         private Guna2TextBox txtUsername, txtPassword;
         private Guna2ComboBox cmbRole;
         private Guna2Button btnLogin;
+        private static readonly HttpClient httpClient = new HttpClient();
 
         public LoginForm()
         {
@@ -64,7 +63,7 @@ namespace garage_managemet_frontend
 
             txtUsername = new Guna2TextBox()
             {
-                PlaceholderText = "Enter your email",
+                PlaceholderText = "Enter your username",
                 Location = new Point(halfWidth / 2 - 130, 150),
                 Size = new Size(260, 40)
             };
@@ -100,7 +99,7 @@ namespace garage_managemet_frontend
             btnLogin.Click += BtnLogin_Click;
             leftPanel.Controls.Add(btnLogin);
 
-            // Right Panel
+            // Right Panel (image area)
             rightPanel = new Panel()
             {
                 Location = new Point(halfWidth, 0),
@@ -109,9 +108,6 @@ namespace garage_managemet_frontend
                 BackgroundImageLayout = ImageLayout.Stretch
             };
             this.Controls.Add(rightPanel);
-
-
-
 
             Label sloganLine1 = new Label()
             {
@@ -135,8 +131,7 @@ namespace garage_managemet_frontend
             };
             rightPanel.Controls.Add(sloganLine2);
 
-
-            // Optional: Resize support
+            // Handle resizing
             this.Resize += (s, e) =>
             {
                 int w = this.ClientSize.Width / 2;
@@ -146,12 +141,10 @@ namespace garage_managemet_frontend
             };
         }
 
-
-        private void BtnLogin_Click(object sender, EventArgs e)
+        private async void BtnLogin_Click(object sender, EventArgs e)
         {
             string user = txtUsername.Text.Trim();
             string pass = txtPassword.Text.Trim();
-            string role = cmbRole.SelectedItem.ToString();
 
             if (user == "" || pass == "")
             {
@@ -159,9 +152,75 @@ namespace garage_managemet_frontend
                 return;
             }
 
-            // Simulated login check
-            MessageBox.Show($"Logging in as {user} ({role})", "Login Successful", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            await LoginAsync();
         }
 
+        private async Task LoginAsync()
+        {
+            try
+            {
+                var loginPayload = new
+                {
+                    Username = txtUsername.Text.Trim(),
+                    Password = txtPassword.Text.Trim(),
+                    UserRole = cmbRole.SelectedItem.ToString()
+                };
+
+                var json = JsonSerializer.Serialize(loginPayload);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await httpClient.PostAsync("http://localhost:5141/api/auth/login", content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var data = await response.Content.ReadAsStringAsync();
+
+                    // Deserialize token response
+                    var result = JsonSerializer.Deserialize<LoginResponse>(data, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+
+                    if (result != null && !string.IsNullOrEmpty(result.Token))
+                    {
+                        MessageBox.Show("✅ Login successful!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                        // ✅ Save token globally
+                        GlobalSession.JwtToken = result.Token;
+
+                        // Open main form (like VehicleForm)
+                        this.Hide();
+                        var vehicleForm = new MainForm();
+                        vehicleForm.ShowDialog();
+                        this.Close();
+                    }
+                    else
+                    {
+                        MessageBox.Show("Invalid response from server. No token found.");
+                    }
+                }
+                else
+                {
+                    var error = await response.Content.ReadAsStringAsync();
+                    MessageBox.Show($"❌ Login failed: {response.StatusCode}\n{error}");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error logging in: {ex.Message}");
+            }
+        }
+
+        // Expected JSON format from backend
+        public class LoginResponse
+        {
+            public string Token { get; set; }
+        }
+    }
+
+    // ✅ Global static class to store token
+    public static class GlobalSession
+    {
+        public static string JwtToken { get; set; }
     }
 }
