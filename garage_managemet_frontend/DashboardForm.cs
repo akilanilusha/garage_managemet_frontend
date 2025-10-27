@@ -8,191 +8,325 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Windows.Forms.DataVisualization.Charting;
 
 namespace garage_managemet_frontend
 {
     public partial class DashboardForm : Form
     {
-        private Label lblTitle;
-        private Guna2DataGridView dgvAppointments;
-        private Chart statusChart;
-        private TableLayoutPanel cardPanel;
-
         private readonly HttpClient httpClient = new HttpClient();
-        private const string API_URL = "http://localhost:5141/api/appointment";
-        
+        private const string API_APPOINTMENT_URL = "http://localhost:5141/api/appointment";
+        private const string API_PARKING_URL = "http://localhost:5141/api/parking";
+
+        private Guna2Panel topPanel, bookingPanel, activityPanel;
+        private Guna2DataGridView dgvBookings;
+        private readonly Dictionary<int, Guna2Panel> slotPanels = new Dictionary<int, Guna2Panel>();
+        private System.Windows.Forms.Timer parkingTimer;
 
         public DashboardForm()
         {
-            
             InitializeComponent();
-            BuildDashboard();
+            BuildUI();
             _ = LoadDashboardDataAsync();
+
+            // 🔁 Start 1s interval updates
+            parkingTimer = new System.Windows.Forms.Timer();
+            parkingTimer.Interval = 1000;
+            parkingTimer.Tick += async (s, e) => await LoadParkingStatusAsync();
+            parkingTimer.Start();
         }
 
-        private void BuildDashboard()
+        // -------------------- BUILD UI --------------------
+        private void BuildUI()
         {
-            this.BackColor = Color.White;
+            this.BackColor = Color.FromArgb(20, 20, 20);
             this.Dock = DockStyle.Fill;
             this.AutoScroll = true;
 
-            lblTitle = new Label()
+            // -------- TITLE --------
+            Label lblTitle = new Label()
             {
-                Text = "📊 Garage Dashboard Overview",
-                Font = new Font("Segoe UI", 18, FontStyle.Bold),
-                ForeColor = Color.Black,
+                Text = "Garage Dashboard Overview",
+                Font = new Font("Segoe UI", 20, FontStyle.Bold),
+                ForeColor = Color.White,
                 Dock = DockStyle.Top,
-                Height = 60,
-                Padding = new Padding(20, 15, 0, 0)
+                Height = 70,
+                Padding = new Padding(25, 20, 0, 0)
             };
-            this.Controls.Add(lblTitle);
 
-            // Stat cards panel
-            cardPanel = new TableLayoutPanel()
+            // -------- ACTIVITY PANEL --------
+            activityPanel = new Guna2Panel()
             {
                 Dock = DockStyle.Top,
-                Height = 130,
-                ColumnCount = 3,
-                Padding = new Padding(20, 10, 20, 10),
+                Height = 180,
+                Padding = new Padding(25),
+                FillColor = Color.FromArgb(28, 28, 28),
+                BorderRadius = 15,
+                Margin = new Padding(10)
+            };
+
+            Label lblActivity = new Label()
+            {
+                Text = "Recent Activity Log",
+                Font = new Font("Segoe UI", 14, FontStyle.Bold),
+                ForeColor = Color.White,
+                Location = new Point(25, 10)
+            };
+            activityPanel.Controls.Add(lblActivity);
+
+            Label lblLog = new Label()
+            {
+                Text = "Vehicle ABC-123 checked in by John.\nSlot 1 changed from FREE to OCCUPIED.\nPayment received from Jane Smith.",
+                Font = new Font("Segoe UI", 10),
+                ForeColor = Color.LightGray,
+                Location = new Point(25, 45),
                 AutoSize = true
             };
-            cardPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.3F));
-            cardPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.3F));
-            cardPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.3F));
-            this.Controls.Add(cardPanel);
+            activityPanel.Controls.Add(lblLog);
 
-            // Content area (Table + Chart)
-            var contentPanel = new Panel()
+            activityPanel.Controls.Add(CreateMetricBox("Revenue", "Rs. 12,500", 450, 40));
+            activityPanel.Controls.Add(CreateMetricBox("Key Metrics", "Rs. 520", 620, 40));
+            activityPanel.Controls.Add(CreateMetricBox("Checked In Today", "13.2 hrs", 450, 100));
+            activityPanel.Controls.Add(CreateMetricBox("Avg Duration", "3.2 hrs", 620, 100));
+
+            // -------- BOOKINGS PANEL --------
+            bookingPanel = new Guna2Panel()
             {
-                Dock = DockStyle.Fill,
-                Padding = new Padding(40),
-                AutoScroll = true
+                Dock = DockStyle.Top,
+                Height = 260,
+                Padding = new Padding(25),
+                FillColor = Color.Black,
+                BorderRadius = 15,
+                Margin = new Padding(10)
             };
-            this.Controls.Add(contentPanel);
 
-            dgvAppointments = new Guna2DataGridView()
+            Label lblBookings = new Label()
             {
-                Dock = DockStyle.Left,
-                Width = this.Width / 2 - 40,
+                Text = "Upcoming Bookings",
+                Font = new Font("Segoe UI", 14, FontStyle.Bold),
+                ForeColor = Color.White,
+                Size = new Size(1200, 20),
+                Location = new Point(25, 10)
+            };
+            bookingPanel.Controls.Add(lblBookings);
+
+            dgvBookings = new Guna2DataGridView()
+            {
+                Location = new Point(25, 50),
+                Size = new Size(1200, 180),
                 ReadOnly = true,
                 AllowUserToAddRows = false,
                 ColumnHeadersHeight = 35,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                BorderStyle = BorderStyle.None
+                ThemeStyle =
+                {
+                    BackColor = Color.Black,
+                    HeaderStyle =
+                    {
+                        BackColor = Color.Black,
+                        ForeColor = Color.White,
+                        Font = new Font("Segoe UI", 10, FontStyle.Bold)
+                    },
+                    RowsStyle =
+                    {
+                        BackColor = Color.Black,
+                        ForeColor = Color.White
+                    }
+                }
             };
-            dgvAppointments.ThemeStyle.HeaderStyle.BackColor = Color.Black;
-            dgvAppointments.ThemeStyle.HeaderStyle.ForeColor = Color.White;
-            dgvAppointments.ThemeStyle.HeaderStyle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
-            dgvAppointments.ThemeStyle.RowsStyle.BackColor = Color.White;
-            dgvAppointments.ThemeStyle.RowsStyle.ForeColor = Color.Black;
-            dgvAppointments.ThemeStyle.RowsStyle.SelectionBackColor = Color.LightGray;
-            dgvAppointments.ThemeStyle.RowsStyle.Font = new Font("Segoe UI", 10);
+            dgvBookings.Columns.Add("Time", "Time");
+            dgvBookings.Columns.Add("VehiclePlate", "Vehicle Plate");
+            dgvBookings.Columns.Add("CustomerName", "Customer");
+            dgvBookings.Columns.Add("Slot", "Slot");
+            bookingPanel.Controls.Add(dgvBookings);
 
-            dgvAppointments.Columns.Add("CustomerID", "Customer");
-            dgvAppointments.Columns.Add("VehicleID", "Vehicle");
-            dgvAppointments.Columns.Add("DateTime", "Date & Time");
-            dgvAppointments.Columns.Add("ServiceType", "Service Type");
-            dgvAppointments.Columns.Add("Status", "Status");
+            // -------- TOP PANEL (Parking + Overview + Quick Actions) --------
+            topPanel = CreateTopPanel();
 
-            contentPanel.Controls.Add(dgvAppointments);
+            // ✅ Add in order (top → bottom)
+            this.Controls.Add(activityPanel);
+            this.Controls.Add(bookingPanel);
+            this.Controls.Add(topPanel);
+            this.Controls.Add(lblTitle);
+        }
 
-            statusChart = new Chart()
+        // -------- TOP PANEL CREATION --------
+        private Guna2Panel CreateTopPanel()
+        {
+            var panel = new Guna2Panel()
             {
-                Dock = DockStyle.Right,
-                Width = this.Width / 3,
-                Palette = ChartColorPalette.Bright
+                Dock = DockStyle.Top,
+                Height = 220,
+                Padding = new Padding(25),
+                FillColor = Color.FromArgb(28, 28, 28),
+                BorderRadius = 15,
+                Margin = new Padding(10)
             };
-            var chartArea = new ChartArea("Main");
-            statusChart.ChartAreas.Add(chartArea);
-            statusChart.Legends.Add(new Legend("Legend"));
-            contentPanel.Controls.Add(statusChart);
 
-            this.Resize += (s, e) =>
+            // Left: Real-Time Slots
+            var slot1 = CreateStatusCard("SLOT 1", "FREE", Color.FromArgb(0, 200, 0));
+            slot1.Location = new Point(30, 30);
+            var slot2 = CreateStatusCard("SLOT 2", "CAR", Color.Red);
+            slot2.Location = new Point(300, 30);
+            panel.Controls.Add(slot1);
+            panel.Controls.Add(slot2);
+
+            slotPanels[1] = slot1;
+            slotPanels[2] = slot2;
+
+            // Middle: Garage Overview
+            var overviewPanel = new Panel()
             {
-                int width = this.ClientSize.Width / 2 - 40;
-                dgvAppointments.Width = Math.Max(width, 400);
-                statusChart.Width = Math.Max(width - 100, 300);
+                Location = new Point(650, 25),
+                Size = new Size(230, 150),
+                BackColor = Color.FromArgb(30, 30, 30)
+            };
+            overviewPanel.Controls.Add(CreateOverviewLabel("Total Slots: 100", 10));
+            overviewPanel.Controls.Add(CreateOverviewLabel("Occupied: 45", 40));
+            overviewPanel.Controls.Add(CreateOverviewLabel("Available: 55", 70));
+            overviewPanel.Controls.Add(CreateOverviewLabel("Occupancy: 45%", 100));
+            var progressBar = new ProgressBar()
+            {
+                Value = 45,
+                ForeColor = Color.Orange,
+                BackColor = Color.Gray,
+                Size = new Size(180, 10),
+                Location = new Point(20, 130)
+            };
+            overviewPanel.Controls.Add(progressBar);
+            panel.Controls.Add(overviewPanel);
+
+            // Right: Quick Actions
+            var quickActions = new Panel()
+            {
+                Location = new Point(1050, 25),
+                Size = new Size(220, 150),
+                BackColor = Color.FromArgb(30, 30, 30)
+            };
+
+            var btn1 = CreateActionButton("Check In / Out Vehicle");
+            btn1.Location = new Point(20, 10);
+            var btn2 = CreateActionButton("Create New Booking");
+            btn2.Location = new Point(20, 60);
+            var btn3 = CreateActionButton("View All Active Vehicles");
+            btn3.Location = new Point(20, 110);
+            quickActions.Controls.AddRange(new Control[] { btn1, btn2, btn3 });
+            panel.Controls.Add(quickActions);
+
+            return panel;
+        }
+
+        // -------- REUSABLE COMPONENTS --------
+        private Guna2Panel CreateStatusCard(string slot, string status, Color color)
+        {
+            var panel = new Guna2Panel()
+            {
+                Size = new Size(140, 140),
+                FillColor = color,
+                BorderRadius = 15,
+                ShadowDecoration = { Enabled = true, Color = color }
+            };
+
+            var lblSlot = new Label()
+            {
+                Text = slot,
+                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                ForeColor = Color.White,
+                Location = new Point(35, 10)
+            };
+
+            var icon = new Label()
+            {
+                Text = "🚗",
+                Font = new Font("Segoe UI Emoji", 36, FontStyle.Bold),
+                Location = new Point(40, 35)
+            };
+
+            var lblStatus = new Label()
+            {
+                Text = status,
+                Name = "lblStatus",
+                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                ForeColor = Color.White,
+                Location = new Point(35, 100)
+            };
+
+            panel.Controls.Add(lblSlot);
+            panel.Controls.Add(icon);
+            panel.Controls.Add(lblStatus);
+            return panel;
+        }
+
+        private Label CreateOverviewLabel(string text, int y)
+        {
+            return new Label()
+            {
+                Text = text,
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 10),
+                Location = new Point(20, y),
+                AutoSize = true
             };
         }
 
-        private Panel CreateCard(string title, string count, Color color)
+        private Guna2Button CreateActionButton(string text)
         {
-            var panel = new Panel()
+            return new Guna2Button()
             {
-                Dock = DockStyle.Fill,
-                Margin = new Padding(10),
-                BackColor = color,
-                Padding = new Padding(10),
-                Height = 100
+                Text = text,
+                Size = new Size(180, 35),
+                FillColor = Color.DodgerBlue,
+                ForeColor = Color.White,
+                BorderRadius = 8,
+                Font = new Font("Segoe UI", 9, FontStyle.Bold)
+            };
+        }
+
+        private Guna2Panel CreateMetricBox(string title, string value, int x, int y)
+        {
+            var box = new Guna2Panel()
+            {
+                Location = new Point(x, y),
+                Size = new Size(150, 50),
+                FillColor = Color.FromArgb(35, 35, 35),
+                BorderRadius = 8
             };
 
             var lblTitle = new Label()
             {
-                Text = title.ToUpper(),
-                Font = new Font("Segoe UI", 11, FontStyle.Bold),
+                Text = title,
                 ForeColor = Color.White,
-                Dock = DockStyle.Top
+                Font = new Font("Segoe UI", 9, FontStyle.Bold),
+                Location = new Point(10, 5)
             };
 
-            var lblCount = new Label()
+            var lblValue = new Label()
             {
-                Text = count,
-                Font = new Font("Segoe UI", 28, FontStyle.Bold),
-                ForeColor = Color.White,
-                Dock = DockStyle.Bottom,
-                Height = 45,
-                TextAlign = ContentAlignment.MiddleLeft
+                Text = value,
+                ForeColor = Color.Orange,
+                Font = new Font("Segoe UI", 10, FontStyle.Bold),
+                Location = new Point(10, 25)
             };
 
-            panel.Controls.Add(lblTitle);
-            panel.Controls.Add(lblCount);
-            return panel;
+            box.Controls.Add(lblTitle);
+            box.Controls.Add(lblValue);
+            return box;
         }
 
-        // ---------------- Load Dashboard Data ----------------
+        // -------- LOAD BOOKINGS --------
         private async Task LoadDashboardDataAsync()
         {
             try
             {
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", GlobalSession.JwtToken);
-                string json = await httpClient.GetStringAsync(API_URL);
+                httpClient.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", GlobalSession.JwtToken);
+                string json = await httpClient.GetStringAsync(API_APPOINTMENT_URL);
 
-                var appointments = JsonSerializer.Deserialize<List<Appointment>>(json, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                var appointments = JsonSerializer.Deserialize<List<Appointment>>(json,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-                if (appointments == null) return;
-
-                int pending = appointments.Count(a => a.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase));
-                int confirmed = appointments.Count(a => a.Status.Equals("Confirmed", StringComparison.OrdinalIgnoreCase));
-                int completed = appointments.Count(a => a.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase));
-
-                // Load Stat Cards
-                cardPanel.Controls.Clear();
-                cardPanel.Controls.Add(CreateCard("Pending", pending.ToString(), Color.Orange));
-                cardPanel.Controls.Add(CreateCard("Confirmed", confirmed.ToString(), Color.DodgerBlue));
-                cardPanel.Controls.Add(CreateCard("Completed", completed.ToString(), Color.MediumSeaGreen));
-
-                // Load Table
-                dgvAppointments.Rows.Clear();
-                foreach (var a in appointments.OrderByDescending(a => a.Date).Take(10))
-                {
-                    dgvAppointments.Rows.Add(a.CustomerID, a.VehicleID, a.Date.ToString("yyyy-MM-dd HH:mm"), a.ServiceType, a.Status);
-                }
-
-                // Load Chart
-                statusChart.Series.Clear();
-                var series = new Series("Status Distribution")
-                {
-                    ChartType = SeriesChartType.Pie,
-                    Font = new Font("Segoe UI", 10, FontStyle.Bold)
-                };
-                series.Points.AddXY("Pending", pending);
-                series.Points.AddXY("Confirmed", confirmed);
-                series.Points.AddXY("Completed", completed);
-                statusChart.Series.Add(series);
+                dgvBookings.Rows.Clear();
+                foreach (var a in appointments.Take(5))
+                    dgvBookings.Rows.Add(a.Date.ToString("HH:mm"), $"VEH-{a.VehicleID}", $"Customer {a.CustomerID}", "Slot 1");
             }
             catch (Exception ex)
             {
@@ -200,18 +334,55 @@ namespace garage_managemet_frontend
             }
         }
 
-        // ---------------- Model ----------------
+        // -------- LOAD PARKING STATUS (every 1s) --------
+        private async Task LoadParkingStatusAsync()
+        {
+            try
+            {
+                string json = await httpClient.GetStringAsync(API_PARKING_URL);
+                var slots = JsonSerializer.Deserialize<List<ParkingSlot>>(json,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                foreach (var slot in slots)
+                {
+                    if (slotPanels.TryGetValue(slot.SlotId, out var panel))
+                    {
+                        var lblStatus = panel.Controls.OfType<Label>().FirstOrDefault(l => l.Name == "lblStatus");
+                        if (lblStatus == null) continue;
+
+                        if (slot.Status.Equals("Free", StringComparison.OrdinalIgnoreCase))
+                        {
+                            panel.FillColor = Color.FromArgb(0, 200, 0);
+                            lblStatus.Text = "FREE";
+                        }
+                        else
+                        {
+                            panel.FillColor = Color.Red;
+                            lblStatus.Text = "CAR";
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error updating parking status: {ex.Message}");
+            }
+        }
+
+        // -------- MODELS --------
         public class Appointment
         {
             public int AppointmentID { get; set; }
             public int CustomerID { get; set; }
             public int VehicleID { get; set; }
             public DateTime Date { get; set; }
-            public string Time { get; set; }
-            public string ServiceType { get; set; }
-            public string Description { get; set; }
             public string Status { get; set; }
-            public int Is_Delete { get; set; }
+        }
+
+        public class ParkingSlot
+        {
+            public int SlotId { get; set; }
+            public string Status { get; set; }
         }
     }
 }

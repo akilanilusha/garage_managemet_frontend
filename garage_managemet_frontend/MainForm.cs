@@ -17,6 +17,7 @@ namespace garage_managemet_frontend
         public MainForm()
         {
             BuildUI();
+
         }
 
         private void BuildUI()
@@ -102,7 +103,7 @@ namespace garage_managemet_frontend
             };
             buttonsPanel.Controls.Add(CreateSidebarButton("User Management", Properties.Resources.dashboard_icon, (s, e) => LoadForm(new UserManagementForm(), "User Management", Properties.Resources.dashboard_icon)));
             buttonsPanel.Controls.Add(CreateSidebarButton("Reports", Properties.Resources.report_icon, (s, e) => LoadForm(new ReportForm(), "Reports", Properties.Resources.report_icon)));
-            buttonsPanel.Controls.Add(CreateSidebarButton("Mechanics", Properties.Resources.mechanic_icon, (s, e) => LoadForm(new MechanicForm(), "Mechanics", Properties.Resources.mechanic_icon)));
+            buttonsPanel.Controls.Add(CreateSidebarButton("Service", Properties.Resources.mechanic_icon, (s, e) => LoadForm(new ServiceForm(), "Service", Properties.Resources.mechanic_icon)));
             buttonsPanel.Controls.Add(CreateSidebarButton("Customers", Properties.Resources.customer_icon, (s, e) => LoadForm(new CustomerForm(), "Customers", Properties.Resources.customer_icon)));
             buttonsPanel.Controls.Add(CreateSidebarButton("Vehicles", Properties.Resources.car_icon, (s, e) => LoadForm(new VehicleForm(), "Vehicles", Properties.Resources.car_icon)));
             buttonsPanel.Controls.Add(CreateSidebarButton("Appointments", Properties.Resources.calendar_icon, (s, e) => LoadForm(new AppointmentForm(), "Appointments", Properties.Resources.calendar_icon)));
@@ -138,8 +139,10 @@ namespace garage_managemet_frontend
             bottomPanel.Controls.Add(loggedInLabel);
             sidebar.Controls.Add(bottomPanel);
 
-            //LoadForm(new DashboardForm(), "Dashboard", Properties.Resources.dashboard_icon);
+            LoadForm(new DashboardForm(), "Dashboard", Properties.Resources.dashboard_icon);
         }
+
+        
 
         private Guna2Button CreateSidebarButton(string text, Image icon, EventHandler onClick)
         {
